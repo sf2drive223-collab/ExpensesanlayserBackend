@@ -3,13 +3,15 @@ from contextlib import asynccontextmanager
 import logging
 import os
 from pathlib import Path
+from typing import Annotated
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
-from state import ExpenseInput
-from tools import save_expense
+from pydantic import ValidationError
+from state import ExpenseFilters, ExpenseInput
+from tools import list_expenses, save_expense
 
 # Keep the single .env in the frontend folder, as requested. Only Python
 # reads its MongoDB credentials; the app calls this API.
@@ -58,3 +60,25 @@ def add_expense(expense: ExpenseInput, request: Request):
     except PyMongoError:
         logger.error("MongoDB expense write failed.")
         raise HTTPException(status_code=503, detail="Could not confirm the expense was saved. Check the database before trying again.") from None
+
+
+@app.get("/expenses")
+def get_expenses(
+    request: Request,
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    year: Annotated[int | None, Query(ge=1, le=9998)] = None,
+    month: Annotated[int | None, Query(ge=1, le=12)] = None,
+    filters: Annotated[str | None, Query(max_length=100000)] = None,
+):
+    if month is not None and year is None:
+        raise HTTPException(status_code=422, detail="Select a year with the month.")
+    try:
+        column_filters = ExpenseFilters.model_validate_json(filters) if filters else ExpenseFilters()
+    except ValidationError:
+        raise HTTPException(status_code=422, detail="Invalid column filters.") from None
+    try:
+        return list_expenses(request.app.state.expenses, limit=limit, offset=offset, year=year, month=month, column_filters=column_filters)
+    except PyMongoError:
+        logger.error("MongoDB expense read failed.")
+        raise HTTPException(status_code=503, detail="Could not load expenses. Please try again.") from None

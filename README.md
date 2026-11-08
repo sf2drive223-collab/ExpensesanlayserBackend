@@ -29,7 +29,7 @@ In Expo Go, the app discovers the development computer from Expo and calls port 
 
 `GET /health` checks that the server started. `POST /expenses` validates and saves an expense. The date is a local calendar date (`YYYY-MM-DD`); amount is stored as MongoDB Decimal128. Item name and category are required; amount must be positive with at most two decimal places and twelve total digits.
 
-The form clears only after a successful save. If a request times out, inspect MongoDB before retrying because a write may already have completed. Expense List remains blank.
+The form clears only after a successful save. If a request times out, inspect MongoDB before retrying because a write may already have completed.
 
 This API is intended for local development. Add authentication before exposing it publicly.
 
@@ -70,3 +70,17 @@ Add the three MongoDB environment variables above through Render's Environment s
 Once deployed, open `https://YOUR-SERVICE.onrender.com/health` and confirm `{"status":"ok"}`. Then update the frontend `EXPO_PUBLIC_API_URL` to `https://YOUR-SERVICE.onrender.com` and fully reload the app. Keep MongoDB settings private and unchanged.
 
 Render setup reference: https://render.com/docs/deploy-fastapi
+
+## Expense List
+
+`GET /expenses?year=2026&month=11&limit=50&offset=0` returns `items`, `has_more`, `total_amount`, `total_count`, and `available_years`. Each item contains `id`, `item_name`, `date`, `category`, and `amount` (a decimal string). Results sort by date descending, then creation time and ID descending. `limit` accepts 1–100; `offset` must be nonnegative. A month requires a year. Omitting both returns all dates for compatibility.
+
+The total and count cover every matching expense, independent of the page size. Amounts are summed as decimals in MongoDB. Available years come from all saved expense dates. The screen starts with the current local year/month, updates automatically on selection, and displays a horizontally scrollable table on narrow screens. An empty month has total `0.00`.
+
+Test locally first: run the backend with `--reload`, point `EXPO_PUBLIC_API_URL` at the computer's LAN address on port 8001, and reload Expo Go. The screen reloads when opened and supports refresh and loading additional pages. Once local testing is complete, deploy the backend before the frontend. Keep Render's `CORS_ORIGINS` updated for the frontend deployment URL.
+
+### Column filters
+
+Each table header opens a searchable list of values for that column. Select multiple values and press Apply; columns combine with AND, while values within one column combine with OR. No selection leaves the column unrestricted. Active buttons are highlighted. Filters reset when the year or month changes.
+
+The API accepts `filters` as a URL-encoded JSON object with optional `item_name`, `date`, `category`, `comments`, and `amount` arrays. Dates use `YYYY-MM-DD`; amounts use decimal strings. For example: `{"item_name":["Lunch","Dinner"],"category":["Food"]}`. The response includes `filter_options` covering all records in the selected period, independently of pagination and active column filters. Totals and counts reflect the combined filters across all pages. Blank comments also match older records without a comments field.
